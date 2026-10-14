@@ -174,7 +174,7 @@ kbd{font-family:var(--body);font-weight:700;font-size:12px;background:#2a1d48;bo
 .touch,.touch body{height:100%;overflow:hidden;overscroll-behavior:none}
 .touch body{padding:0;position:fixed;inset:0;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 .touch .wrap{max-width:none;display:block}
-.touch .stage,.touch .stage.sel,.touch .stage.menu-open{position:fixed;inset:0;width:100%;height:100%;aspect-ratio:auto;min-height:0;border:0;border-radius:0;box-shadow:none;touch-action:none}
+.touch .stage,.touch .stage.sel,.touch .stage.menu-open{position:fixed;left:0;top:var(--appt,0px);right:auto;bottom:auto;width:var(--appw,100%);height:var(--apph,100%);aspect-ratio:auto;min-height:0;border:0;border-radius:0;box-shadow:none;touch-action:none}
 .touch .stage .overlay,.touch .stage.sel #scrSelect,.touch .stage.menu-open .overlay{position:absolute;inset:0;min-height:0;touch-action:pan-y;
   padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(12px,env(safe-area-inset-bottom));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
 .touch #scrSelect,.touch #scrTitle{justify-content:safe center;gap:10px}
@@ -218,7 +218,12 @@ kbd{font-family:var(--body);font-weight:700;font-size:12px;background:#2a1d48;bo
 @keyframes rot{0%,30%{transform:rotate(0)}60%,100%{transform:rotate(-90deg)}}
 @media (prefers-reduced-motion:reduce){#rotate .ph{animation:none;transform:rotate(-90deg)}}
 </style>
-<script>try{if(matchMedia('(pointer:coarse)').matches&&navigator.maxTouchPoints>0)document.documentElement.classList.add('touch')}catch(e){}</script>
+<script>try{if(matchMedia('(pointer:coarse)').matches&&navigator.maxTouchPoints>0){const H=document.documentElement;H.classList.add('touch');
+  const app=navigator.standalone||matchMedia('(display-mode: standalone),(display-mode: fullscreen)').matches;H.classList.toggle('app',!!app);
+  if(!app){const m=document.querySelector('meta[name=viewport]');if(m)m.setAttribute('content',m.getAttribute('content').replace(/,?\s*viewport-fit=cover/,''))}
+  const fit=()=>{const v=window.visualViewport,w=v?v.width:innerWidth,h=v?v.height:innerHeight,t=v?v.offsetTop:0;
+    H.style.setProperty('--appw',w+'px');H.style.setProperty('--apph',h+'px');H.style.setProperty('--appt',t+'px');window.scrollTo(0,0)};
+  fit();addEventListener('resize',fit);addEventListener('orientationchange',()=>setTimeout(fit,300));if(window.visualViewport){visualViewport.addEventListener('resize',fit);visualViewport.addEventListener('scroll',fit)}}}catch(e){}</script>
 
 <div class="wrap">
   <div class="stage menu-open" id="stage">
@@ -405,7 +410,16 @@ function shade(hex,amt){const n=parseInt(hex.slice(1),16);let r=n>>16,g=n>>8&255
 
 // ---------- audio ----------
 let AC=null;
-function audio(){if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(AC&&AC.state==='suspended')AC.resume();if(AC)loadVO();if(AC&&MUS.on)mStart()}
+let UNLOCK=null;
+function silentWav(){const n=4410,b=new ArrayBuffer(44+n*2),d=new DataView(b),w=(o,s)=>{for(let i=0;i<s.length;i++)d.setUint8(o+i,s.charCodeAt(i))};
+  w(0,'RIFF');d.setUint32(4,36+n*2,true);w(8,'WAVE');w(12,'fmt ');d.setUint32(16,16,true);d.setUint16(20,1,true);d.setUint16(22,1,true);d.setUint32(24,44100,true);d.setUint32(28,88200,true);d.setUint16(32,2,true);d.setUint16(34,16,true);w(36,'data');d.setUint32(40,n*2,true);
+  return URL.createObjectURL(new Blob([b],{type:'audio/wav'}))}
+function audio(){
+  try{if(navigator.audioSession&&navigator.audioSession.type!=='playback')navigator.audioSession.type='playback'}catch(e){}
+  if(!UNLOCK){try{UNLOCK=new Audio(silentWav());UNLOCK.loop=true;UNLOCK.setAttribute('playsinline','');UNLOCK.volume=.01;const p=UNLOCK.play();if(p&&p.catch)p.catch(()=>{UNLOCK=null})}catch(e){UNLOCK=null}}
+  if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}
+  if(AC&&AC.state!=='running')AC.resume();
+  if(AC&&!AC._blip){AC._blip=1;try{const b=AC.createBuffer(1,1,22050),s=AC.createBufferSource();s.buffer=b;s.connect(AC.destination);s.start(0)}catch(e){}}if(AC)loadVO();if(AC&&MUS.on)mStart()}
 function sfx(kind){
   if(!AC||!G.sound)return;
   try{
@@ -1996,6 +2010,8 @@ if(TOUCH){
 }
 function syncTouchPad(){if(!TOUCH)return;const on=G.phase!=='attract'&&!G.paused&&Object.values(screens).every(x=>x.hidden);const tp=$('tpad');if(tp.classList.contains('on')!==on)tp.classList.toggle('on',on);
   const me=G.f[0];if(me)$('tsu').classList.toggle('ready',me.super>=100)}
+['touchend','click','keydown'].forEach(t=>document.addEventListener(t,()=>{if(G.sound||MUS.on)audio()},{passive:true}));
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&AC&&AC.state!=='running')AC.resume().catch(()=>{})});
 let last=performance.now(),acc=0;
 function loop(ts){acc+=Math.min(100,ts-last);last=ts;while(acc>=1000/60){step();acc-=1000/60}
   syncScene();updateHud();syncTouchPad();
